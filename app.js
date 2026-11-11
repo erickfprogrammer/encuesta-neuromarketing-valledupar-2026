@@ -1,6 +1,7 @@
 'use strict';
 
 const WHATSAPP_NUMBER = '573117350027';
+const SURVEY_API = 'https://qsenryecfyjpcwjngyaf.supabase.co/functions/v1/neuromarketing-results-2026';
 const questions = [
   { question: '¿Cuál es su rango de edad?', short: 'Rango de edad', options: ['18–25 años', '26–35 años', '36–45 años', '46–55 años', 'Más de 55 años'] },
   { question: '¿Con qué frecuencia realiza compras de productos de uso personal?', short: 'Frecuencia de compras personales', options: ['Varias veces por semana', 'Una vez por semana', 'Varias veces al mes', 'Una vez al mes o menos'] },
@@ -76,7 +77,7 @@ function renderIntro() {
     '<div class="info-list">' +
       '<div class="info-item"><span class="info-check">✓</span><span>Participación voluntaria para mayores de 18 años residentes en Valledupar.</span></div>' +
       '<div class="info-item"><span class="info-check">✓</span><span>No solicitamos tu nombre ni datos personales dentro de la encuesta.</span></div>' +
-      '<div class="info-item"><span class="info-check">✓</span><span>Las respuestas se usarán con fines académicos y para resultados agrupados. Puedes retirarte en cualquier momento.</span></div>' +
+      '<div class="info-item"><span class="info-check">✓</span><span>Las respuestas se guardarán para análisis académico y los resultados se mostrarán agrupados. Puedes retirarte antes de enviar.</span></div>' +
       '<div class="info-item"><span class="info-check">!</span><span>El envío se realiza desde tu WhatsApp: el destinatario podrá ver tu número y, según tu configuración, tu perfil.</span></div>' +
     '</div>' +
     '<div class="consent-box"><p class="consent-question">¿Aceptas participar en este estudio?</p>' +
@@ -135,23 +136,71 @@ function renderReview() {
   setProgress(100, 'ÚLTIMO PASO · CONFIRMACIÓN', '¡Encuesta completada!', '15 de 15');
   root.innerHTML =
     '<div class="review-intro"><h3>Revisa tus respuestas</h3>' +
-    '<p>Tu código de encuesta es <strong>' + escapeHtml(surveyCode) + '</strong>. Puedes volver y corregir cualquier respuesta antes de compartirla.</p></div>' +
+    '<p>Tu código de encuesta es <strong>' + escapeHtml(surveyCode) + '</strong>. Puedes volver y corregir antes de guardarlas.</p></div>' +
     '<div class="review-list">' + reviewList() + '</div>' +
     '<div class="notice"><span class="notice-icon" aria-hidden="true">◉</span><div>' +
-      '<strong>Falta enviarla por WhatsApp</strong>' +
-      '<p>Al tocar el botón se abrirá una conversación con el número <strong>+57 311 735 0027</strong> y las respuestas ya escritas. <strong>Debes pulsar Enviar en WhatsApp</strong> para que lleguen. WhatsApp podrá mostrar tu número al destinatario.</p>' +
+      '<strong>Se guardará automáticamente para el análisis</strong>' +
+      '<p>Al enviar la encuesta, tus 15 respuestas se registrarán en una base de datos para actualizar los indicadores, porcentajes y gráficas del estudio. No necesitas WhatsApp para participar.</p>' +
     '</div></div>' +
+    '<p class="validation-msg" id="save-status" role="alert" aria-live="polite"></p>' +
     '<div class="form-actions">' +
       '<button class="btn btn-secondary" type="button" data-action="back"><span aria-hidden="true">←</span> Corregir</button>' +
-      '<button class="btn btn-wapp" type="button" data-action="send">Abrir WhatsApp <span aria-hidden="true">↗</span></button>' +
+      '<button class="btn btn-primary" type="button" data-action="save">Enviar respuestas <span aria-hidden="true">✓</span></button>' +
     '</div>' +
-    '<p class="copy-info">¿No abre WhatsApp? <button type="button" data-action="copy">Copiar las respuestas</button></p>';
+    '<p class="form-note">La información individual se mantiene privada. En el Excel de análisis se muestran datos agrupados.</p>';
+}
+
+function renderSuccess() {
+  setProgress(100, 'ENCUESTA RECIBIDA', '¡Gracias por participar!', 'Completada');
+  root.innerHTML =
+    '<div class="completion">' +
+      '<span class="welcome-icon" aria-hidden="true">✓</span>' +
+      '<h3>¡Respuestas registradas!</h3>' +
+      '<p>Gracias por contribuir a este estudio sobre neuromarketing y decisiones de compra. Tu encuesta se guardó correctamente y sus resultados alimentarán el análisis académico.</p>' +
+      '<div class="notice"><span class="notice-icon" aria-hidden="true">◉</span><div>' +
+        '<strong>Código de participación: ' + escapeHtml(surveyCode) + '</strong>' +
+        '<p>Guarda este código como constancia de participación. No necesitas hacer nada más.</p>' +
+      '</div></div>' +
+      '<p class="form-note">Opcional: puedes compartir también una copia por WhatsApp. Si lo haces, el destinatario podrá ver tu número telefónico y perfil.</p>' +
+      '<div class="form-actions"><button class="btn btn-wapp" type="button" data-action="send">Compartir copia por WhatsApp <span aria-hidden="true">↗</span></button></div>' +
+    '</div>';
+}
+
+async function saveSurvey(button) {
+  const status = document.getElementById('save-status');
+  if (!status) return;
+  button.disabled = true;
+  button.textContent = 'Guardando respuestas…';
+  status.textContent = '';
+  try {
+    const response = await fetch(SURVEY_API, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        surveyCode: surveyCode,
+        answers: questions.map(function (_, i) { return answers[i]; }),
+        consent: true
+      })
+    });
+    const result = await response.json();
+    if (!response.ok || result.ok !== true) {
+      throw new Error(result.error || 'El servidor no confirmó la recepción de la encuesta.');
+    }
+    step = 4;
+    render();
+    navigateTop();
+  } catch (error) {
+    status.textContent = 'No se pudieron guardar las respuestas. Revisa tu conexión e intenta de nuevo. ' + (error && error.message ? error.message : '');
+    button.disabled = false;
+    button.textContent = 'Reintentar envío';
+  }
 }
 
 function render() {
   if (step === -2) renderRefusal();
   else if (step === -1) renderIntro();
   else if (step === 3) renderReview();
+  else if (step === 4) renderSuccess();
   else renderSection(step);
 }
 
@@ -239,10 +288,12 @@ root.addEventListener('click', function (event) {
     step = step === 3 ? 2 : Math.max(-1, step - 1);
     render();
     navigateTop();
-  } else if (action === 'send' && step === 3) {
+  } else if (action === 'save' && step === 3) {
+    void saveSurvey(button);
+  } else if (action === 'send' && step === 4) {
     const message = buildMessage();
     window.location.assign('https://wa.me/' + WHATSAPP_NUMBER + '?text=' + encodeURIComponent(message));
-  } else if (action === 'copy' && step === 3) {
+  } else if (action === 'copy' && step === 4) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(buildMessage()).then(function () {
         button.textContent = '¡Respuestas copiadas!';
